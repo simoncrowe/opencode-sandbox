@@ -6,24 +6,41 @@ from opencode_sandbox import sandbox
 
 
 @pytest.fixture
-def box() -> sandbox.Sandbox:
-    return sandbox.Sandbox(
-        repo_root=Path("/home/me/git/My.Repo"),
-        branch="feat/Add-Thing",
-        sandbox_root=Path("/home/me/git/sandbox"),
-    )
+def boxes() -> list[sandbox.Sandbox]:
+    return [
+        sandbox.Sandbox(name="ocs-git", directory=Path("/home/me/git")),
+        sandbox.Sandbox(name="ocs-notes", directory=Path("/home/me/notes")),
+    ]
 
 
-def test_clone_dir_nests_branch_under_repo(box: sandbox.Sandbox) -> None:
-    assert box.clone_dir == Path("/home/me/git/sandbox/My.Repo/feat/Add-Thing")
+def test_default_name_is_valid_and_unique_per_path() -> None:
+    first = sandbox.default_name(Path("/home/me/git/My.Repo"))
+    second = sandbox.default_name(Path("/srv/My.Repo"))
+
+    assert first.startswith("ocs-my-repo-")
+    assert len(first) == len("ocs-my-repo-") + 6
+    assert first != second
 
 
-def test_workdir_mirrors_repo_and_branch(box: sandbox.Sandbox) -> None:
-    assert box.workdir == "/work/My.Repo/feat/Add-Thing"
+def test_default_name_for_root() -> None:
+    assert sandbox.default_name(Path("/")).startswith("ocs-root-")
 
 
-def test_project_is_valid_compose_name(box: sandbox.Sandbox) -> None:
-    assert box.project == "ocs-my-repo-feat-add-thing"
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("work", "ocs-work"),
+        ("ocs-work", "ocs-work"),
+        ("My Work", "ocs-my-work"),
+    ],
+)
+def test_custom_name(name: str, expected: str) -> None:
+    assert sandbox.custom_name(name) == expected
+
+
+def test_custom_name_without_usable_characters() -> None:
+    with pytest.raises(ValueError, match="no usable characters"):
+        sandbox.custom_name("!!!")
 
 
 @pytest.mark.parametrize(
@@ -37,3 +54,33 @@ def test_project_is_valid_compose_name(box: sandbox.Sandbox) -> None:
 )
 def test_slug(text: str, expected: str) -> None:
     assert sandbox.slug(text) == expected
+
+
+@pytest.mark.parametrize(
+    "path,expected",
+    [
+        ("/home/me/git", "ocs-git"),
+        ("/home/me/git/platform/touchsurgery", "ocs-git"),
+        ("/home/me/gitlab", None),
+        ("/home/me", None),
+    ],
+)
+def test_containing(boxes: list[sandbox.Sandbox], path: str, expected: str | None) -> None:
+    found = sandbox.containing(Path(path), boxes)
+
+    assert (found.name if found else None) == expected
+
+
+@pytest.mark.parametrize(
+    "path,expected",
+    [
+        ("/home/me/git", None),
+        ("/home/me/git/platform", "ocs-git"),
+        ("/home/me", "ocs-git"),
+        ("/home/me/gitlab", None),
+    ],
+)
+def test_overlapping(boxes: list[sandbox.Sandbox], path: str, expected: str | None) -> None:
+    found = sandbox.overlapping(Path(path), boxes)
+
+    assert (found.name if found else None) == expected

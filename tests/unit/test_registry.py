@@ -9,7 +9,9 @@ from opencode_sandbox import registry, sandbox
 @pytest.fixture
 def box() -> sandbox.Sandbox:
     return sandbox.Sandbox(
-        repo_root=Path("/git/repo"), branch="feat/x", sandbox_root=Path("/git/sandbox")
+        name="ocs-git-abc123",
+        directory=Path("/home/me/git"),
+        ssh_keys=(Path("/home/me/.ssh/id_bitbucket"),),
     )
 
 

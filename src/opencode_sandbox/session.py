@@ -1,4 +1,4 @@
-"""Lifecycle of detached sandbox sessions: start, stop, sign in and sync."""
+"""Lifecycle of detached sandbox sessions: start, stop and sign in."""
 
 import shutil
 import subprocess
@@ -6,9 +6,10 @@ import sys
 from collections.abc import Iterable
 from pathlib import Path
 
-from opencode_sandbox import compose, credentials, gitsync, registry, sandbox, server
+from opencode_sandbox import compose, credentials, registry, sandbox, server
 
 CONFIG_FILES = ("opencode.json", "opencode.jsonc", "AGENTS.md")
+GATEWAY_PROXY = "gateway:%h:%p,proxyport=3128"
 
 
 class SessionError(Exception):
@@ -23,12 +24,44 @@ def merge_allowlists(texts: Iterable[str]) -> str:
     return "\n".join(text.rstrip("\n") for text in texts) + "\n"
 
 
+def ssh_config(key_names: Iterable[str]) -> str:
+    identities = "".join(f"    IdentityFile ~/.ssh/{name}\n" for name in key_names)
+    return (
+        "Host *\n"
+        "    IdentitiesOnly yes\n"
+        f"{identities}"
+        f"    ProxyCommand socat - PROXY:{GATEWAY_PROXY}\n"
+    )
+
+
+def gitconfig(identity: dict[str, str]) -> str:
+    entries = "".join(f"    {key} = {value}\n" for key, value in identity.items())
+    return f"[user]\n{entries}" if entries else ""
+
+
+def write_ssh_seed(ssh_dir: Path, *, keys: Iterable[Path], known_hosts: Path) -> None:
+    ssh_dir.mkdir(mode=0o700)
+    names = []
+    for key in keys:
+        if (ssh_dir / key.name).exists():
+            raise SessionError(f"two SSH keys are named {key.name}; rename one")
+        shutil.copy(key, ssh_dir / key.name)
+        names.append(key.name)
+    if known_hosts.is_file():
+        shutil.copy(known_hosts, ssh_dir / "known_hosts")
+    (ssh_dir / "config").write_text(ssh_config(names))
+
+
 def write_seed(
     seed_dir: Path,
     *,
     allowlists: list[Path],
     config_dir: Path,
     agents_dir: Path,
+    ssh_keys: Iterable[Path] = (),
+    known_hosts: Path,
+    git_identity: dict[str, str],
+    ca_bundle: Path | None = None,
 ) -> None:
     """Stage the files the containers need without exposing their host paths."""
     texts = [path.read_text() for path in allowlists if path.is_file()]
@@ -42,6 +75,12 @@ def write_seed(
 
     if agents_dir.is_dir():
         shutil.copytree(agents_dir, seed_dir / "agents", ignore=shutil.ignore_patterns("*.swp", ".git"))
+
+    if git_identity:
+        (seed_dir / "gitconfig").write_text(gitconfig(git_identity))
+    write_ssh_seed(seed_dir / "ssh", keys=ssh_keys, known_hosts=known_hosts)
+    if ca_bundle:
+        shutil.copy(ca_bundle, seed_dir / "ca-certificates.crt")
 
 
 def base_url(port: int) -> str:
@@ -62,6 +101,9 @@ def start(
     allowlists: list[Path],
     config_dir: Path,
     agents_dir: Path,
+    known_hosts: Path,
+    git_identity: dict[str, str],
+    ca_bundle: Path | None = None,
 ) -> str:
     """Start the sandbox's containers in the background and return the web UI URL."""
     registry.save(state_root, box)
@@ -70,7 +112,16 @@ def start(
     seed = registry.seed_dir(state_root, box.project)
     shutil.rmtree(seed, ignore_errors=True)
     seed.mkdir(mode=0o700)
-    write_seed(seed, allowlists=allowlists, config_dir=config_dir, agents_dir=agents_dir)
+    write_seed(
+        seed,
+        allowlists=allowlists,
+        config_dir=config_dir,
+        agents_dir=agents_dir,
+        ssh_keys=box.ssh_keys,
+        known_hosts=known_hosts,
+        git_identity=git_identity,
+        ca_bundle=ca_bundle,
+    )
 
     env = compose.environment(
         images=images,
@@ -94,16 +145,13 @@ def start(
     return base_url(port)
 
 
-def project_name(box: sandbox.Sandbox) -> str:
-    return f"{box.repo}: {box.branch}"
-
-
 def prepare_project(address: str, box: sandbox.Sandbox, *, password: str) -> None:
-    """Make the clone show up in the web UI: opencode only registers a project once a session exists there."""
-    if not server.has_sessions(address, box.workdir, password=password):
-        server.create_session(address, box.workdir, title=box.branch, password=password)
-    if project := server.project_id(address, box.workdir, password=password):
-        server.rename_project(address, project, name=project_name(box), password=password)
+    """Make the directory show up in the web UI: opencode only registers a project once a session exists there."""
+    directory = str(box.directory)
+    if not server.has_sessions(address, directory, password=password):
+        server.create_session(address, directory, title=box.directory.name, password=password)
+    if project := server.project_id(address, directory, password=password):
+        server.rename_project(address, project, name=box.directory.name, password=password)
 
 
 def sign_in_link(box: sandbox.Sandbox, *, images: compose.Images, state_root: Path) -> str:
@@ -126,32 +174,6 @@ def launch_browser(link: str, *, browser: str) -> None:
         log(f"could not start {browser} ({error}); sign in at {link}")
 
 
-def stop(box: sandbox.Sandbox, *, images: compose.Images, state_root: Path) -> gitsync.SyncResult:
+def stop(box: sandbox.Sandbox, *, images: compose.Images, state_root: Path) -> None:
     compose.run(box.project, "down", env=compose.environment(images=images), capture=True, check=False)
     shutil.rmtree(registry.seed_dir(state_root, box.project), ignore_errors=True)
-    return report_sync(box)
-
-
-def report_sync(box: sandbox.Sandbox) -> gitsync.SyncResult:
-    if gitsync.is_dirty(box.clone_dir):
-        log(f"{box.clone_dir} has uncommitted changes (not synced)")
-    result = gitsync.sync_to_host(host=box.repo_root, clone=box.clone_dir, branch=box.branch)
-    ref = gitsync.sandbox_ref(box.branch)
-    match result:
-        case gitsync.SyncResult.UP_TO_DATE | gitsync.SyncResult.FAST_FORWARDED:
-            log(f"{box.branch}: {result}")
-        case gitsync.SyncResult.DIVERGED:
-            log(f"{box.branch} has diverged; sandbox commits are at {ref}")
-        case gitsync.SyncResult.CHECKED_OUT:
-            log(f"{box.branch} is checked out on the host; run `git merge --ff-only {ref}` there")
-    return result
-
-
-def push_branch(box: sandbox.Sandbox) -> bool:
-    try:
-        result = gitsync.push(host=box.repo_root, branch=box.branch)
-    except gitsync.GitError as error:
-        log(f"push of {box.branch} failed: {error}")
-        return False
-    log(f"{box.branch}: {result}")
-    return True

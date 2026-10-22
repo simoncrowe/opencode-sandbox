@@ -14,6 +14,9 @@
 (^|\.)opencode\.ai$
 ^models\.dev$
 
+# Git over SSH (port 22) and HTTPS
+^bitbucket\.org$
+
 # Python packages
 ^pypi\.org$
 ^files\.pythonhosted\.org$
@@ -25,3 +28,7 @@
 
 # pyenv source downloads
 ^www\.python\.org$
+
+
+# Atlassian MCP
+mcp.atlassian.com

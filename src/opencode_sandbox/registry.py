@@ -32,9 +32,9 @@ def seed_dir(root: Path, project: str) -> Path:
 def to_json(box: sandbox.Sandbox) -> str:
     return json.dumps(
         {
-            "repo_root": str(box.repo_root),
-            "branch": box.branch,
-            "sandbox_root": str(box.sandbox_root),
+            "name": box.name,
+            "directory": str(box.directory),
+            "ssh_keys": [str(key) for key in box.ssh_keys],
         },
         indent=2,
     )
@@ -43,9 +43,9 @@ def to_json(box: sandbox.Sandbox) -> str:
 def from_json(text: str) -> sandbox.Sandbox:
     data = json.loads(text)
     return sandbox.Sandbox(
-        repo_root=Path(data["repo_root"]),
-        branch=data["branch"],
-        sandbox_root=Path(data["sandbox_root"]),
+        name=data["name"],
+        directory=Path(data["directory"]),
+        ssh_keys=tuple(Path(key) for key in data["ssh_keys"]),
     )
 
 

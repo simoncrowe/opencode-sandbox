@@ -33,11 +33,11 @@ services:
       - NO_PROXY=localhost,127.0.0.1,::1
       - no_proxy=localhost,127.0.0.1,::1
     volumes:
-      - ${OCS_CLONE_DIR}:${OCS_WORKDIR}
+      - ${OCS_DIR}:${OCS_DIR}
       - ${OCS_SEED_DIR}:/run/opencode-sandbox:ro
       - state:/home/dev/.local/share/opencode
       - cache:/home/dev/.cache
-    working_dir: ${OCS_WORKDIR}
+    working_dir: ${OCS_DIR}
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     networks: [internal]

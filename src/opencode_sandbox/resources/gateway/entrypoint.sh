@@ -21,6 +21,7 @@ FilterURLs Off
 FilterCaseSensitive Off
 FilterDefaultDeny Yes
 ConnectPort 443
+ConnectPort 22
 LogLevel ${LOG_LEVEL:-Notice}
 EOF
 
