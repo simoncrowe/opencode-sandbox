@@ -25,6 +25,14 @@ if [ -d "$seed/ssh" ]; then
   chmod 600 "$HOME/.ssh"/*
 fi
 
+# Only seed MCP tokens once: OAuth servers may rotate refresh tokens, so
+# overwriting the container's copy could replace a fresh token with a stale one.
+mcp_auth="$HOME/.local/share/opencode/mcp-auth.json"
+if [ -f "$seed/mcp-auth.json" ] && [ ! -f "$mcp_auth" ]; then
+  cp "$seed/mcp-auth.json" "$mcp_auth"
+  chmod 600 "$mcp_auth"
+fi
+
 if [ -f "$seed/ca-certificates.crt" ]; then
   export SSL_CERT_FILE="$seed/ca-certificates.crt"
   export NODE_EXTRA_CA_CERTS="$SSL_CERT_FILE"

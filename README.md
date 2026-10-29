@@ -1,17 +1,15 @@
 # opencode-sandbox
 
 Run the [opencode](https://opencode.ai) v2 web UI in a container that can only see one
-host directory (mounted read-write at the same path) and can only reach allowlisted hosts.
+host directory (mounted read-write at the same path).
 The directory can be a single repository, a folder of repositories or anything else, so
 an agent can work across several repositories while host credentials (cloud, Teleport,
 other SSH keys) stay out of reach.
 
 ```
-browser ── 127.0.0.1:<random> ──► gateway ──► opencode     (internal network, no route out)
-                                    │  socat :4096          opencode serve
-                                    │  tinyproxy allowlist  HTTPS_PROXY=gateway:3128
-                                    ▼  (ports 443 and 22)   <dir> mounted at <dir>
-                                 internet (allowlisted hosts only)
+browser ── 127.0.0.1:<random> ──► gateway ──► opencode ──► internet
+                                    socat :4096    opencode serve
+                                                   <dir> mounted at <dir>
 ```
 
 ## Install
@@ -34,7 +32,6 @@ ocs start [dir|name] [--ssh-key PATH]... [--name NAME] [--open]
 ocs ls                         # all sandboxes, with directory, status and web UI URL
 ocs open [name] [--print]      # open the web UI signed in (or print a sign-in link)
 ocs logs [name] [-f]           # container logs
-ocs denied [name]              # hosts the gateway refused
 ocs stop [name]                # stop the containers
 ocs rm [name]                  # delete a stopped sandbox's record and opencode state
 ocs build                      # (re)build the container images
@@ -47,9 +44,8 @@ another sandbox's directory is refused. Without a name, the other commands use t
 sandbox whose directory contains the current directory.
 
 `--ssh-key` (repeatable) copies an unencrypted private key into the container's
-`~/.ssh`, with your `~/.ssh/known_hosts` and an SSH config that uses only those keys and
-tunnels through the gateway. Keys are saved with the sandbox; passing `--ssh-key` on a
-later start replaces them. Your global git `user.name` and `user.email` are copied too.
+`~/.ssh`, with your `~/.ssh/known_hosts` and an SSH config that uses only those keys. Keys are saved with the sandbox; passing `--ssh-key` on a later
+start replaces them. Your global git `user.name` and `user.email` are copied too.
 
 Each sandbox keeps its port and password across restarts, so browser sign-ins (valid
 30 days) keep working. Its record lives in `~/.local/state/opencode-sandbox/<name>/`;
@@ -73,12 +69,10 @@ The host's CA bundle (`/etc/ssl/certs/ca-certificates.crt` or equivalent, overri
 `OCS_CA_BUNDLE`) is copied in too, so TLS-inspecting proxies such as Zscaler that the
 host trusts are trusted inside the container.
 
-## Network allowlist
-
-`src/opencode_sandbox/resources/allowlist` holds the default host regexes (GitHub Copilot,
-opencode, Bitbucket, PyPI, uv and pyenv Python downloads). Add your own, one extended regex per
-line, in `~/.config/opencode-sandbox/allowlist`, then restart the sandbox. Refused hosts
-appear in `ocs logs` and `ocs denied`.
+MCP OAuth tokens (`~/.local/share/opencode/mcp-auth.json`, from `opencode mcp auth <server>`
+on the host) are copied in only if the sandbox has none yet. To re-seed them, run
+`docker exec <name>-opencode-1 rm /home/dev/.local/share/opencode/mcp-auth.json` and
+restart the sandbox.
 
 ## Configuration
 

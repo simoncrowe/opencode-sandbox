@@ -5,14 +5,8 @@ import pytest
 from opencode_sandbox import session
 
 
-def test_merge_allowlists_joins_with_single_newlines() -> None:
-    assert session.merge_allowlists(["a\n", "b"]) == "a\nb\n"
-
-
 @pytest.fixture
 def host_files(tmp_path: Path) -> dict[str, Path]:
-    default = tmp_path / "default-allowlist"
-    default.write_text("^pypi\\.org$\n")
     config = tmp_path / "config"
     config.mkdir()
     (config / "AGENTS.md").write_text("be nice")
@@ -23,10 +17,10 @@ def host_files(tmp_path: Path) -> dict[str, Path]:
     (agents / "skills" / "python-design" / ".SKILL.md.swp").write_text("swap")
     agents_link = tmp_path / ".agents"
     agents_link.symlink_to(agents)
-    return {"default": default, "config": config, "agents": agents_link}
+    return {"config": config, "agents": agents_link}
 
 
-def test_write_seed_stages_allowlist_and_config(
+def test_write_seed_stages_config(
     tmp_path: Path, host_files: dict[str, Path]
 ) -> None:
     seed = tmp_path / "seed"
@@ -34,14 +28,12 @@ def test_write_seed_stages_allowlist_and_config(
 
     session.write_seed(
         seed,
-        allowlists=[host_files["default"], tmp_path / "missing"],
         config_dir=host_files["config"],
         agents_dir=host_files["agents"],
         known_hosts=tmp_path / "missing",
         git_identity={},
     )
 
-    assert (seed / "allowlist").read_text() == "^pypi\\.org$\n"
     assert sorted(p.name for p in (seed / "config").iterdir()) == ["AGENTS.md"]
 
 
@@ -53,7 +45,6 @@ def test_write_seed_copies_agents_through_symlink_without_swap_files(
 
     session.write_seed(
         seed,
-        allowlists=[host_files["default"]],
         config_dir=host_files["config"],
         agents_dir=host_files["agents"],
         known_hosts=tmp_path / "missing",
@@ -73,7 +64,6 @@ def test_write_seed_copies_ca_bundle(tmp_path: Path, host_files: dict[str, Path]
 
     session.write_seed(
         seed,
-        allowlists=[host_files["default"]],
         config_dir=host_files["config"],
         agents_dir=host_files["agents"],
         known_hosts=tmp_path / "missing",
@@ -82,6 +72,24 @@ def test_write_seed_copies_ca_bundle(tmp_path: Path, host_files: dict[str, Path]
     )
 
     assert (seed / "ca-certificates.crt").read_text() == bundle.read_text()
+
+
+def test_write_seed_copies_mcp_auth(tmp_path: Path, host_files: dict[str, Path]) -> None:
+    mcp_auth = tmp_path / "mcp-auth.json"
+    mcp_auth.write_text('{"atlassian": {}}')
+    seed = tmp_path / "seed"
+    seed.mkdir()
+
+    session.write_seed(
+        seed,
+        config_dir=host_files["config"],
+        agents_dir=host_files["agents"],
+        known_hosts=tmp_path / "missing",
+        git_identity={},
+        mcp_auth=mcp_auth,
+    )
+
+    assert (seed / "mcp-auth.json").read_text() == '{"atlassian": {}}'
 
 
 @pytest.fixture
@@ -116,13 +124,12 @@ def test_write_ssh_seed_refuses_duplicate_key_names(tmp_path: Path, ssh_files: d
         session.write_ssh_seed(tmp_path / "ssh", keys=[ssh_files["a"], other], known_hosts=ssh_files["known_hosts"])
 
 
-def test_ssh_config_uses_only_given_keys_through_gateway() -> None:
+def test_ssh_config_uses_only_given_keys() -> None:
     assert session.ssh_config(["id_a", "id_b"]) == (
         "Host *\n"
         "    IdentitiesOnly yes\n"
         "    IdentityFile ~/.ssh/id_a\n"
         "    IdentityFile ~/.ssh/id_b\n"
-        "    ProxyCommand socat - PROXY:gateway:%h:%p,proxyport=3128\n"
     )
 
 

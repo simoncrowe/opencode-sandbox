@@ -9,7 +9,6 @@ from pathlib import Path
 from opencode_sandbox import compose, credentials, registry, sandbox, server
 
 CONFIG_FILES = ("opencode.json", "opencode.jsonc", "AGENTS.md")
-GATEWAY_PROXY = "gateway:%h:%p,proxyport=3128"
 
 
 class SessionError(Exception):
@@ -20,18 +19,9 @@ def log(message: str) -> None:
     print(f"ocs: {message}", file=sys.stderr, flush=True)
 
 
-def merge_allowlists(texts: Iterable[str]) -> str:
-    return "\n".join(text.rstrip("\n") for text in texts) + "\n"
-
-
 def ssh_config(key_names: Iterable[str]) -> str:
     identities = "".join(f"    IdentityFile ~/.ssh/{name}\n" for name in key_names)
-    return (
-        "Host *\n"
-        "    IdentitiesOnly yes\n"
-        f"{identities}"
-        f"    ProxyCommand socat - PROXY:{GATEWAY_PROXY}\n"
-    )
+    return f"Host *\n    IdentitiesOnly yes\n{identities}"
 
 
 def gitconfig(identity: dict[str, str]) -> str:
@@ -55,18 +45,15 @@ def write_ssh_seed(ssh_dir: Path, *, keys: Iterable[Path], known_hosts: Path) ->
 def write_seed(
     seed_dir: Path,
     *,
-    allowlists: list[Path],
     config_dir: Path,
     agents_dir: Path,
     ssh_keys: Iterable[Path] = (),
     known_hosts: Path,
     git_identity: dict[str, str],
     ca_bundle: Path | None = None,
+    mcp_auth: Path | None = None,
 ) -> None:
     """Stage the files the containers need without exposing their host paths."""
-    texts = [path.read_text() for path in allowlists if path.is_file()]
-    (seed_dir / "allowlist").write_text(merge_allowlists(texts))
-
     seed_config = seed_dir / "config"
     seed_config.mkdir()
     for name in CONFIG_FILES:
@@ -81,6 +68,8 @@ def write_seed(
     write_ssh_seed(seed_dir / "ssh", keys=ssh_keys, known_hosts=known_hosts)
     if ca_bundle:
         shutil.copy(ca_bundle, seed_dir / "ca-certificates.crt")
+    if mcp_auth and mcp_auth.is_file():
+        shutil.copy(mcp_auth, seed_dir / "mcp-auth.json")
 
 
 def base_url(port: int) -> str:
@@ -98,12 +87,12 @@ def start(
     *,
     images: compose.Images,
     state_root: Path,
-    allowlists: list[Path],
     config_dir: Path,
     agents_dir: Path,
     known_hosts: Path,
     git_identity: dict[str, str],
     ca_bundle: Path | None = None,
+    mcp_auth: Path | None = None,
 ) -> str:
     """Start the sandbox's containers in the background and return the web UI URL."""
     registry.save(state_root, box)
@@ -114,13 +103,13 @@ def start(
     seed.mkdir(mode=0o700)
     write_seed(
         seed,
-        allowlists=allowlists,
         config_dir=config_dir,
         agents_dir=agents_dir,
         ssh_keys=box.ssh_keys,
         known_hosts=known_hosts,
         git_identity=git_identity,
         ca_bundle=ca_bundle,
+        mcp_auth=mcp_auth,
     )
 
     env = compose.environment(

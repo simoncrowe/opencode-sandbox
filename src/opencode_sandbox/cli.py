@@ -153,15 +153,12 @@ def start(
         box,
         images=images,
         state_root=state_root,
-        allowlists=[
-            compose.resources_dir() / "allowlist",
-            config_home() / "opencode-sandbox" / "allowlist",
-        ],
         config_dir=config_home() / "opencode",
         agents_dir=Path.home() / ".agents",
         known_hosts=Path.home() / ".ssh" / "known_hosts",
         git_identity=git_identity(),
         ca_bundle=host_ca_bundle(),
+        mcp_auth=Path.home() / ".local" / "share" / "opencode" / "mcp-auth.json",
     )
     print(f"{box.name}  {box.directory}  {url}")
     link = session.sign_in_link(box, images=images, state_root=state_root)
@@ -242,23 +239,6 @@ def logs(target: str | None = None, *, follow: Annotated[bool, Parameter(name=["
     box = resolve(target, cwd=Path.cwd(), state_root=registry.default_root())
     args = ["logs", "--follow"] if follow else ["logs"]
     compose.run(box.project, *args, env=compose.environment(images=images_from_env()), check=False)
-
-
-@app.command
-def denied(target: str | None = None) -> None:
-    """List hosts the gateway refused.
-
-    Parameters
-    ----------
-    target
-        Sandbox name from `ocs ls` (default: the sandbox containing the current directory).
-    """
-    box = resolve(target, cwd=Path.cwd(), state_root=registry.default_root())
-    env = compose.environment(images=images_from_env())
-    output = compose.run(box.project, "logs", "--no-log-prefix", "gateway", env=env, capture=True)
-    for line in output.stdout.splitlines():
-        if "refused on filtered domain" in line:
-            print(line)
 
 
 @app.command

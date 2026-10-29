@@ -6,9 +6,6 @@ services:
     restart: unless-stopped
     environment:
       UPSTREAM: opencode
-      LOG_LEVEL: Notice
-    volumes:
-      - ${OCS_SEED_DIR}/allowlist:/etc/opencode-sandbox/allowlist:ro
     ports:
       - "127.0.0.1:${OCS_PORT}:4096"
     networks: [internal, egress]
@@ -26,12 +23,6 @@ services:
     depends_on: [gateway]
     environment:
       - OPENCODE_SERVER_PASSWORD
-      - HTTP_PROXY=http://gateway:3128
-      - HTTPS_PROXY=http://gateway:3128
-      - http_proxy=http://gateway:3128
-      - https_proxy=http://gateway:3128
-      - NO_PROXY=localhost,127.0.0.1,::1
-      - no_proxy=localhost,127.0.0.1,::1
     volumes:
       - ${OCS_DIR}:${OCS_DIR}
       - ${OCS_SEED_DIR}:/run/opencode-sandbox:ro
@@ -40,7 +31,7 @@ services:
     working_dir: ${OCS_DIR}
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    networks: [internal]
+    networks: [internal, egress]
 
 networks:
   internal:
