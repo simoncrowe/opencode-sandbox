@@ -1,0 +1,25 @@
+[project]
+name = "opencode-sandbox"
+version = "0.1.0"
+description = "Run the opencode web UI in an isolated container against a mounted host directory"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = ["cyclopts>=5.2"]
+
+[project.scripts]
+ocs = "opencode_sandbox.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "mypy>=1.10"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
