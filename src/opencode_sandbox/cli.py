@@ -1,5 +1,6 @@
 """Run opencode web sessions in isolated containers against a mounted host directory."""
 
+import dataclasses
 import os
 import subprocess
 import sys
@@ -77,6 +78,7 @@ def resolve_start(
     name: str | None,
     ssh_keys: list[Path] | None,
     state_root: Path,
+    docker: bool | None = None,
 ) -> sandbox.Sandbox:
     """Find a saved sandbox by name or directory, or describe a new one; never one nested in another."""
     if target and (saved := registry.load(state_root, target)):
@@ -110,12 +112,21 @@ def resolve_start(
             raise UsageError(f"SSH key {key} does not exist")
 
     if current:
-        return current if keys is None else sandbox.Sandbox(current.name, directory, keys)
-    return sandbox.Sandbox(new_name or sandbox.default_name(directory), directory, keys or ())
+        return dataclasses.replace(
+            current,
+            ssh_keys=current.ssh_keys if keys is None else keys,
+            docker=current.docker if docker is None else docker,
+        )
+    return sandbox.Sandbox(
+        new_name or sandbox.default_name(directory), directory, keys or (), docker=bool(docker)
+    )
 
 
 def build(images: compose.Images) -> None:
-    compose.run(None, "build", env=compose.environment(images=images))
+    env = compose.environment(images=images, ca_bundle=host_ca_bundle())
+    # Lets the build read the CA bundle, which lives outside the compose directory.
+    env["BUILDX_BAKE_ENTITLEMENTS_FS"] = "0"
+    compose.run(None, "build", env=env)
 
 
 @app.command
@@ -124,6 +135,7 @@ def start(
     *,
     name: str | None = None,
     ssh_key: Annotated[list[Path] | None, Parameter(name="--ssh-key")] = None,
+    docker: bool | None = None,
     open_: Annotated[bool, Parameter(name="--open")] = False,
 ) -> None:
     """Start a background web session with a directory mounted read-write.
@@ -136,14 +148,23 @@ def start(
         Name for a new sandbox, instead of one derived from the directory.
     ssh_key
         Private key to make available inside the sandbox; repeat for several. Replaces saved keys.
+    docker
+        Give the sandbox its own Docker daemon (requires the Sysbox runtime). Saved with the sandbox.
     open_
         Open the web UI in the browser.
     """
     state_root = registry.default_root()
-    box = resolve_start(target, cwd=Path.cwd(), name=name, ssh_keys=ssh_key, state_root=state_root)
+    box = resolve_start(
+        target, cwd=Path.cwd(), name=name, ssh_keys=ssh_key, docker=docker, state_root=state_root
+    )
     images = images_from_env()
 
-    if compose.is_running(box.project, env=compose.environment(images=images)):
+    if box.docker and not compose.has_docker_runtime():
+        raise UsageError(
+            f"--docker needs the {compose.DOCKER_RUNTIME} runtime; install Sysbox"
+            f" or start with --no-docker"
+        )
+    if compose.is_running(box.project, env=compose.environment(images=images, box=box)):
         raise UsageError(f"{box.name} is already running; use `ocs open {box.name}`")
     if not compose.images_exist(images):
         session.log(f"building images for opencode {images.opencode_version}")
@@ -238,7 +259,7 @@ def logs(target: str | None = None, *, follow: Annotated[bool, Parameter(name=["
     """
     box = resolve(target, cwd=Path.cwd(), state_root=registry.default_root())
     args = ["logs", "--follow"] if follow else ["logs"]
-    compose.run(box.project, *args, env=compose.environment(images=images_from_env()), check=False)
+    compose.run(box.project, *args, env=compose.environment(images=images_from_env(), box=box), check=False)
 
 
 @app.command
@@ -252,7 +273,7 @@ def rm(target: str | None = None) -> None:
     """
     state_root = registry.default_root()
     box = resolve(target, cwd=Path.cwd(), state_root=state_root)
-    env = compose.environment(images=images_from_env())
+    env = compose.environment(images=images_from_env(), box=box)
 
     if compose.is_running(box.project, env=env):
         raise UsageError(f"{box.name} is running; `ocs stop {box.name}` first")

@@ -12,6 +12,7 @@ from opencode_sandbox import sandbox
 
 PLACEHOLDER_PATH = "/nonexistent"
 CACHE_VOLUME = "opencode-sandbox-cache"
+DOCKER_RUNTIME = "sysbox-runc"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -37,6 +38,13 @@ def resources_dir() -> Path:
     return Path(str(importlib.resources.files("opencode_sandbox") / "resources"))
 
 
+def compose_files(box: sandbox.Sandbox | None) -> list[Path]:
+    files = [resources_dir() / "compose.yaml"]
+    if box and box.docker:
+        files.append(resources_dir() / "compose.docker.yaml")
+    return files
+
+
 def environment(
     *,
     images: Images,
@@ -44,9 +52,11 @@ def environment(
     seed_dir: Path | None = None,
     password: str = "",
     port: int = 0,
+    ca_bundle: Path | None = None,
 ) -> dict[str, str]:
     """Variables interpolated into compose.yaml; paths are placeholders when only building."""
     return {
+        "COMPOSE_FILE": os.pathsep.join(str(path) for path in compose_files(box)),
         "OCS_OPENCODE_VERSION": images.opencode_version,
         "OCS_GATEWAY_TAG": package_version(),
         "OCS_UID": str(images.uid),
@@ -55,11 +65,12 @@ def environment(
         "OCS_SEED_DIR": str(seed_dir) if seed_dir else PLACEHOLDER_PATH,
         "OPENCODE_SERVER_PASSWORD": password,
         "OCS_PORT": str(port),
+        "OCS_CA_BUNDLE": str(ca_bundle) if ca_bundle else os.devnull,
     }
 
 
 def command(project: str | None, *args: str) -> list[str]:
-    cmd = ["docker", "compose", "--progress", "quiet", "-f", str(resources_dir() / "compose.yaml")]
+    cmd = ["docker", "compose", "--progress", "quiet"]
     if project:
         cmd += ["-p", project]
     return [*cmd, *args]
@@ -85,6 +96,14 @@ def ensure_cache_volume() -> None:
     subprocess.run(
         ["docker", "volume", "create", CACHE_VOLUME], capture_output=True, check=True
     )
+
+
+def has_docker_runtime() -> bool:
+    proc = subprocess.run(
+        ["docker", "info", "--format", "{{json .Runtimes}}"],
+        capture_output=True, text=True, check=True,
+    )
+    return DOCKER_RUNTIME in json.loads(proc.stdout or "{}")
 
 
 def images_exist(images: Images) -> bool:
