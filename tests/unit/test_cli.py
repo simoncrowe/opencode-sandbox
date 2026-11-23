@@ -83,6 +83,24 @@ def test_start_saved_by_directory_replaces_keys(
     assert box == sandbox.Sandbox(name=saved.name, directory=saved.directory, ssh_keys=(key,))
 
 
+def test_start_new_with_docker(state_root: Path, workspace: Path) -> None:
+    box = cli.resolve_start(None, cwd=workspace, name=None, ssh_keys=None, docker=True, state_root=state_root)
+
+    assert box.docker is True
+
+
+@pytest.mark.parametrize("docker,expected", [(None, True), (False, False)])
+def test_start_saved_keeps_or_replaces_docker(
+    state_root: Path, workspace: Path, key: Path, docker: bool | None, expected: bool
+) -> None:
+    saved = sandbox.Sandbox(name="ocs-other", directory=workspace / "other", ssh_keys=(key,), docker=True)
+    registry.save(state_root, saved)
+
+    box = cli.resolve_start("ocs-other", cwd=workspace, name=None, ssh_keys=None, docker=docker, state_root=state_root)
+
+    assert box == sandbox.Sandbox(name="ocs-other", directory=saved.directory, ssh_keys=(key,), docker=expected)
+
+
 @pytest.mark.parametrize("target", ["platform/touchsurgery", "."])
 def test_start_refuses_nested_sandbox(
     state_root: Path, saved: sandbox.Sandbox, workspace: Path, target: str

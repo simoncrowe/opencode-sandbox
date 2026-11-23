@@ -164,5 +164,5 @@ def launch_browser(link: str, *, browser: str) -> None:
 
 
 def stop(box: sandbox.Sandbox, *, images: compose.Images, state_root: Path) -> None:
-    compose.run(box.project, "down", env=compose.environment(images=images), capture=True, check=False)
+    compose.run(box.project, "down", env=compose.environment(images=images, box=box), capture=True, check=False)
     shutil.rmtree(registry.seed_dir(state_root, box.project), ignore_errors=True)

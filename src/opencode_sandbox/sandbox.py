@@ -14,6 +14,7 @@ class Sandbox:
     name: str
     directory: Path
     ssh_keys: tuple[Path, ...] = ()
+    docker: bool = False
 
     @property
     def project(self) -> str:

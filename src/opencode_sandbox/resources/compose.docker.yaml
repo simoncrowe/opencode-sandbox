@@ -1,0 +1,38 @@
+services:
+  docker:
+    image: docker:29-dind
+    runtime: sysbox-runc
+    restart: unless-stopped
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        ca=/run/opencode-sandbox/ca-certificates.crt
+        if [ -f "$$ca" ]; then export SSL_CERT_FILE="$$ca"; fi
+        exec dockerd-entrypoint.sh --mtu=1280
+    volumes:
+      - ${OCS_DIR}:${OCS_DIR}
+      - ${OCS_SEED_DIR}:/run/opencode-sandbox:ro
+      - docker-certs:/certs
+      - docker-data:/var/lib/docker
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    networks: [internal, egress]
+
+  opencode:
+    depends_on:
+      docker:
+        condition: service_healthy
+    environment:
+      DOCKER_HOST: tcp://docker:2376
+      DOCKER_TLS_VERIFY: "1"
+      DOCKER_CERT_PATH: /run/docker-certs/client
+    volumes:
+      - docker-certs:/run/docker-certs:ro
+
+volumes:
+  docker-certs: {}
+  docker-data: {}

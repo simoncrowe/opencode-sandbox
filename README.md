@@ -28,7 +28,7 @@ Sandboxes run detached under the Docker daemon (restarting with it), so they are
 not tied to a shell.
 
 ```sh
-ocs start [dir|name] [--ssh-key PATH]... [--name NAME] [--open]
+ocs start [dir|name] [--ssh-key PATH]... [--name NAME] [--docker | --no-docker] [--open]
 ocs ls                         # all sandboxes, with directory, status and web UI URL
 ocs open [name] [--print]      # open the web UI signed in (or print a sign-in link)
 ocs logs [name] [-f]           # container logs
@@ -47,6 +47,15 @@ sandbox whose directory contains the current directory.
 `~/.ssh`, with your `~/.ssh/known_hosts` and an SSH config that uses only those keys. Keys are saved with the sandbox; passing `--ssh-key` on a later
 start replaces them. Your global git `user.name` and `user.email` are copied too.
 
+`--docker` gives the sandbox its own Docker daemon, in a `docker` container run by
+[Sysbox](https://github.com/nestybox/sysbox) (unprivileged; install it on the host
+first). The opencode container talks to it over TLS, so `docker` and `docker compose`
+work as usual, but published ports are reached at `docker:<port>`, not `localhost`. The
+sandbox directory is mounted at the same path in both containers, so bind mounts of it
+work. Nested containers can't see anything else on the host. The setting is saved with
+the sandbox; `--no-docker` turns it off. Pulled images persist across restarts and are
+removed by `ocs rm`.
+
 Each sandbox keeps its port and password across restarts, so browser sign-ins (valid
 30 days) keep working. Its record lives in `~/.local/state/opencode-sandbox/<name>/`;
 opencode sessions persist in a Docker volume. Both are removed by `ocs rm`, which never
@@ -58,6 +67,11 @@ The agent can change anything in the mounted directory, including files that run
 host later: git hooks and config, `justfile`s, `.envrc`, pre-commit config. It can also
 read any secrets stored there, and push with the keys you give it. Review changes before
 running them on the host and prefer narrowly scoped deploy or access keys.
+
+With `--docker`, the agent is root inside its Docker daemon, so files its containers
+write to the mounted directory may be owned by root on the host. Sysbox isolates that
+daemon from the host's, but a kernel exploit from a nested container is a larger attack
+surface than the default sandbox.
 
 ## Credentials and config
 

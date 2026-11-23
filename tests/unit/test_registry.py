@@ -12,11 +12,18 @@ def box() -> sandbox.Sandbox:
         name="ocs-git-abc123",
         directory=Path("/home/me/git"),
         ssh_keys=(Path("/home/me/.ssh/id_bitbucket"),),
+        docker=True,
     )
 
 
 def test_json_round_trip(box: sandbox.Sandbox) -> None:
     assert registry.from_json(registry.to_json(box)) == box
+
+
+def test_from_json_without_docker_defaults_off() -> None:
+    text = '{"name": "ocs-git", "directory": "/home/me/git", "ssh_keys": []}'
+
+    assert registry.from_json(text).docker is False
 
 
 def test_save_then_load(tmp_path: Path, box: sandbox.Sandbox) -> None:

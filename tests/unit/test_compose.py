@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,20 @@ def test_environment_for_build_uses_placeholders(images: compose.Images) -> None
     assert env["OCS_DIR"] == compose.PLACEHOLDER_PATH
     assert env["OCS_SEED_DIR"] == compose.PLACEHOLDER_PATH
     assert env["OCS_OPENCODE_VERSION"] == "2.0.24"
+
+
+@pytest.mark.parametrize("docker,expected", [(False, ["compose.yaml"]), (True, ["compose.yaml", "compose.docker.yaml"])])
+def test_environment_selects_compose_files(images: compose.Images, docker: bool, expected: list[str]) -> None:
+    box = sandbox.Sandbox(name="ocs-git", directory=Path("/home/me/git"), docker=docker)
+
+    env = compose.environment(images=images, box=box)
+
+    assert [Path(path).name for path in env["COMPOSE_FILE"].split(os.pathsep)] == expected
+
+
+@pytest.mark.parametrize("ca_bundle,expected", [(Path("/etc/ca.crt"), "/etc/ca.crt"), (None, os.devnull)])
+def test_environment_ca_bundle(images: compose.Images, ca_bundle: Path | None, expected: str) -> None:
+    assert compose.environment(images=images, ca_bundle=ca_bundle)["OCS_CA_BUNDLE"] == expected
 
 
 @pytest.mark.parametrize(

@@ -18,6 +18,7 @@ services:
         OPENCODE_VERSION: ${OCS_OPENCODE_VERSION}
         UID: ${OCS_UID}
         GID: ${OCS_GID}
+      secrets: [ca_bundle]
     pull_policy: never
     restart: unless-stopped
     depends_on: [gateway]
@@ -36,7 +37,14 @@ services:
 networks:
   internal:
     internal: true
-  egress: {}
+  egress:
+    # Below the ~1300-byte path MTU behind Zscaler, which otherwise stalls large SSH transfers.
+    driver_opts:
+      com.docker.network.driver.mtu: "1280"
+
+secrets:
+  ca_bundle:
+    file: ${OCS_CA_BUNDLE}
 
 volumes:
   state: {}

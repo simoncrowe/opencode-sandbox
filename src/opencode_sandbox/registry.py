@@ -35,6 +35,7 @@ def to_json(box: sandbox.Sandbox) -> str:
             "name": box.name,
             "directory": str(box.directory),
             "ssh_keys": [str(key) for key in box.ssh_keys],
+            "docker": box.docker,
         },
         indent=2,
     )
@@ -46,6 +47,7 @@ def from_json(text: str) -> sandbox.Sandbox:
         name=data["name"],
         directory=Path(data["directory"]),
         ssh_keys=tuple(Path(key) for key in data["ssh_keys"]),
+        docker=data.get("docker", False),
     )
 
 
